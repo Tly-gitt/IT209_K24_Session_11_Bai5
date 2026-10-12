@@ -1,0 +1,74 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: `${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Gradle Test & Build JAR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Thiết lập môi trường JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Cấp quyền thực thi cho Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Chạy Unit Test và đóng gói với Gradle
+        run: ./gradlew test bootJar
+
+  docker-build:
+    name: Build and Push Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Đăng nhập vào GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: `${{ env.REGISTRY }}
+          username: `${{ github.actor }}
+          password: `${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trích xuất Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: `${{ env.REGISTRY }}/`${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Thiết lập Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Đóng gói và đẩy Docker Image lên GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: `${{ steps.meta.outputs.tags }}
+          labels: `${{ steps.meta.outputs.labels }}
